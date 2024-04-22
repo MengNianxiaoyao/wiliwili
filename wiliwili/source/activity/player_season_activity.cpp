@@ -20,6 +20,7 @@
 #include "view/video_card.hpp"
 #include "view/svg_image.hpp"
 #include "view/mpv_core.hpp"
+#include "view/grid_dropdown.hpp"
 
 /// PlayerSeasonActivity
 
@@ -106,7 +107,7 @@ void PlayerSeasonActivity::onContentAvailable() {
 
     //评论加载下一页
     recyclingGrid->onNextPage([this]() {
-        if (this->episodeResult.aid != 0) this->requestVideoComment(this->episodeResult.aid);
+        if (this->episodeResult.aid != 0) this->requestVideoComment(std::to_string(this->episodeResult.aid));
     });
 
     // 二维码按钮
@@ -277,15 +278,26 @@ void PlayerSeasonActivity::onSeasonVideoInfo(const bilibili::SeasonResultWrapper
         return container;
     });
 
-    video->setSeasonAction([this](brls::View *view){
-        std::vector<std::string> values;
-        for (const auto& item : this->episodeList) {
-            values.push_back(fmt::format("{} {}", item.title, item.long_title));
-        }
-        brls::Dropdown* dropdown = new brls::Dropdown(
-            "wiliwili/player/p"_i18n, values, [this](int selected) {
-                this->onIndexChange(selected); 
-            }, episodeResult.index);
+    video->setSeasonAction([this](brls::View* view) {
+        auto* dropdown = new BaseDropdown(
+            "wiliwili/player/p"_i18n, [this](int selected) { this->onIndexChange(selected); }, episodeResult.index);
+        dropdown->getRecyclingList()->registerCell("Cell", []() { return PlayerTabCell::create(); });
+        dropdown->getRecyclingList()->registerCell("Header", []() { return PlayerTabHeader::create(); });
+        dropdown->setDataSource(new CommonDataSourceDropdown<bilibili::SeasonEpisodeResult>(
+            this->episodeList, dropdown, [dropdown](auto recycler, auto d) {
+                if (!d.id) {
+                    // 显示项为标题
+                    auto* item = (PlayerTabHeader*)recycler->dequeueReusableCell("Header");
+                    item->title->setText(d.title);
+                    return (RecyclingGridItem*)item;
+                }
+                // 显示分集项
+                auto* item = (PlayerTabCell*)recycler->dequeueReusableCell("Cell");
+                item->title->setText(d.title);
+                item->setSelected(dropdown->getSelected() == d.index);
+                item->setBadge(d.badge_info.text, d.badge_info.bg_color);
+                return (RecyclingGridItem*)item;
+            }));
         brls::Application::pushActivity(new brls::Activity(dropdown));
         return true;
     });
